@@ -15,6 +15,18 @@ var (
 	validLine = regexp.MustCompile(`^JFK*`)
 	windMetar = regexp.MustCompile(`\d*KT`)
 	windDir = regexp.MustCompile(`\d{3}`)
+	WindDirections = map[string]int{
+		"NE" : 45, 
+		"E"  : 90,
+		"SE" : 135,
+		"S"  : 180,
+		"SW" : 225,
+		"W"  : 270,
+		"NW" : 315,
+		"N" : 360,
+		
+
+	}
 )
 
 // Get the text
@@ -72,21 +84,53 @@ func extractWindInfo(processTextReceiver <-chan string, extractedWindChan chan<-
 }
 
 func extractWindDir(extractedWindReceiver <-chan string, windDirChan chan<- int) {
+
+	// Receive the processed windata from previous process
 	for windData := range extractedWindReceiver {
+
+		// Extract the wind data angles from the imported data
 		winDirExtract := windDir.FindAllString(windData, 1)
+
+		// Loop over each data 
 		for _, windDirData := range winDirExtract {
+
+			// Convert each wind data to Interger
 			windDirDataInt, err := strconv.Atoi(windDirData)
+
+			// To err is man
 			if err != nil {
 				fmt.Println("Error parsing String to Interger")
 			}
-			fmt.Printf("%v\n\n", windDirDataInt)
 		
-				
+			// Pass the data to the next thread
 			windDirChan <- windDirDataInt
-		}
-			
-		
+		}	
 	}
+	// Close the thread
+	close(windDirChan)
+}
+
+func computeWindDir(windDirReceiver <-chan int, results chan<- map[string]int)  {
+	// Retrieve the data via a channel from the previous process
+	for windData := range windDirReceiver {
+
+		// Increment the cardial map with each value within the scope
+		switch {
+		case windData < 45 : WindDirections["NE"]++
+		case windData < 90 : WindDirections["E"]++
+		case windData < 135 : WindDirections["SE"]++
+		case windData < 180 : WindDirections["S"]++
+		case windData < 225 : WindDirections["SW"]++
+		case windData < 270: WindDirections["W"]++
+		case windData < 315 : WindDirections["NW"]++
+		case windData < 360 : WindDirections["N"]++
+		}
+	}
+
+	// Send the result
+	results <- WindDirections
+
+	close(results)
 }
 
 // Collate information from the extracted information
@@ -96,6 +140,7 @@ func main() {
 	textProcessedSender := make(chan string)
 	extractedWindSender := make(chan string)
 	extractedWindDirSender := make(chan int)
+	resultChannel := make(chan map[string]int)
 
 	start := time.Now()
 
@@ -104,6 +149,8 @@ func main() {
 	go extractWindInfo(textProcessedSender, extractedWindSender)
 
 	go extractWindDir(extractedWindSender, extractedWindDirSender)
+
+	go computeWindDir(extractedWindDirSender, resultChannel)
 	// 1. Get the text
 
 	// Define the absolute path to the Directory where the data
@@ -149,15 +196,18 @@ func main() {
 		}
 
 	}
-
+	// Close the channel feeding the data from the file
 	close(textProcessSender)
 
-	for v := range extractedWindDirSender {
-		fmt.Printf("%v", v)
-		
-	} 
+
+	// Retrieve result from the thread processing the data
+	result := <- resultChannel
+
+	// Print result to the console
+	fmt.Println(result)
 	end := time.Since(start)
 
+	// Print the time elaspsed
 	fmt.Println(end)
 
 }
